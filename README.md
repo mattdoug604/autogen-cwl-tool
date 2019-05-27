@@ -1,0 +1,1 @@
+Auto-generate a bare-bones CWL tool from the help text of an installed program.
