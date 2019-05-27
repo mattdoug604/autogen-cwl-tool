@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import argparse
 import re
 import sys
 
@@ -9,6 +10,7 @@ from subprocess import Popen, PIPE, STDOUT
 import yaml
 
 
+__program__ = "autogen-cwl-tool"
 __version__ = "0.0.1"
 
 # Primitive types: string, int, long, float, double, null
@@ -50,31 +52,78 @@ DEFAULT_ARG = {
 RE_PREFIX = r"(?<![a-z]|[A-Z])\-{1,2}[\w\-\.\?\@_]+"
 # match one of TYPE_LIST in the string
 RE_TYPE = r"\b(?:" + "|".join([re.escape(i) for i in TYPE_LIST]) + r")\b"
+# match a substring that looks like a list
+RE_LIST = r"\{.*?\,.*?\}|\[.*?\,.*?\]"
+
+# --------------------------------------------------------------------------- #
+class folded_str(str): pass
+class literal_str(str): pass
+
+def change_style(style, representer):
+    def new_representer(dumper, data):
+        scalar = representer(dumper, data)
+        scalar.style = style
+        return scalar
+    return new_representer
+
+represent_folded_str = change_style('>', yaml.representer.SafeRepresenter.represent_str)
+represent_literal_str = change_style('|', yaml.representer.SafeRepresenter.represent_str)
+
+yaml.add_representer(folded_str, represent_folded_str)
+yaml.add_representer(literal_str, represent_literal_str)
+# --------------------------------------------------------------------------- #
 
 
-def read_help_cmd(cmd):
+def parse_args():
+
+    parser = argparse.ArgumentParser(
+        description="Create a bare-bones CWL tool for the specified command."
+    )
+    parser.add_argument("output", help="output file")
+    parser.add_argument("command", nargs="+", help="shell command")
+    parser.add_argument(
+        "-p", "--param", default="--help", help="param used to print help text"
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version="{} v{}".format(__program__, __version__),
+        help="show the program version and and exit",
+    )
+
+    args = parser.parse_args()
+
+    # strip any common help parameters
+    args.command = [i for i in args.command if i not in ("-h", "--help")]
+    args.param = None if not args.param else args.param
+
+    return args
+
+
+def read_help_cmd(cmd, help_param="--help"):
     """
     Notes:
         - can't use error codes b/c some programs 'fail' to display help text
     """
 
     help_text = []
-    cmd = [i for i in cmd if i not in ('-h', '--help')] + ["-h"]
+    if help_param:
+        cmd = cmd + [help_param]
 
     p = Popen(cmd, stdout=PIPE, stderr=STDOUT, universal_newlines=True)
     for line in p.stdout:
         line = line.rstrip()
         if len(line) > 0:
             help_text.append(line)
-
     return help_text
 
 
-def normalize_type(type_range):
+def normalize_type(type_str):
 
-    type_range = type_range.lower().strip()
-    if type_range in TYPE_LIST:
-        return TYPE_LIST[type_range]
+    type_str = type_str.lower().strip()
+    if type_str in TYPE_LIST:
+        return TYPE_LIST[type_str] + "?"  # mark as not required
 
     return None
 
@@ -147,6 +196,14 @@ def format_id(inputs, prfx_str, escape=99):
     return arg_id
 
 
+def list_is_bools(value):
+
+    for i in value:
+        if not i.lower() in ("true", "false"):
+            return False
+    return True
+
+
 def get_inputs(help_text):
 
     inputs = []
@@ -163,11 +220,9 @@ def get_inputs(help_text):
         # match argument prefix(es)
         for match in re.finditer(RE_PREFIX, line):
             prfx_range.append(match.span())
-            # debug_line(line, prfx_range[-1], 'prfx')
         # match recognized input type
         for match in re.finditer(RE_TYPE, line, flags=re.IGNORECASE):
             type_range.append(match.span())
-            # debug_line(line, match.span(), 'type')
 
         # sanity check: prefixes are not seperated by words (excluding "input type" words)
         prfx_range = check_prefix_positions(line, prfx_range, type_range)
@@ -219,13 +274,21 @@ def get_inputs(help_text):
         if not arg["id"]:
             raise ValueError("No id for input: {}".format(arg))
 
+        choices = [i for i in re.finditer(RE_LIST, arg["doc"]) if i]
+        if choices:
+            choices = re.sub(r"\{|\}|\[|\]|\,", "", choices[-1].group()).split(" ")
+            if list_is_bools(choices):
+                arg["type"] = "boolean?"
+            else:
+                arg["type"] = {"type": "enum?", "symbols": choices}
+
         if not arg["type"]:
-            arg["type"] = "Any"  # ask for input?
+            arg["type"] = "boolean?"
 
         if not arg["doc"]:
             print("Warning: no docstring for input: '{}'".format(arg["id"]))
         else:
-            arg["doc"] = arg["doc"].strip()
+            arg["doc"] = folded_str(arg["doc"].strip())
 
         if not arg["inputBinding"]["prefix"]:
             raise ValueError("No prefix defined for input: '{}'".format(arg["id"]))
@@ -233,24 +296,41 @@ def get_inputs(help_text):
     return inputs
 
 
-def output_as_yaml(cmd, inputs, outputs=[]):
+def output_as_yaml(cmd, inputs, outputs, doc, output_file):
 
-    with open('tool.yaml', 'w') as fh:
+    with open(output_file, "w") as fh:
         print(SHEBANG, file=fh)
-        print('class: CommandLineTool', file=fh)
-        print('cwlVersion: {}'.format(CWLVERSION), file=fh)
-        yaml.dump({'baseCommand': cmd}, fh, default_flow_style=False)
-        print('', file=fh)
-        yaml.dump({'inputs': inputs}, fh, default_flow_style=False)
-        print('', file=fh)
-        yaml.dump({'outputs': outputs}, fh, default_flow_style=False)
+        print("class: CommandLineTool", file=fh)
+        print("cwlVersion: {}".format(CWLVERSION), file=fh)
+        yaml.dump({"baseCommand": cmd}, fh, default_flow_style=False)
+        print('doc: "{}"'.format(doc), file=fh)
+        print("", file=fh)
+        yaml.dump({"inputs": inputs}, fh, default_flow_style=False)
+        print("", file=fh)
+        yaml.dump({"outputs": outputs}, fh, default_flow_style=False)
+
+
+def usage_string(help_text, cmd):
+
+    cmd_str = " ".join(cmd)
+    for line in help_text:
+        if cmd_str in line:
+            return ">-" + line.strip()
+    return None
 
 
 if __name__ == "__main__":
 
     # strip any help command line arguments
-    cmd = [i for i in sys.argv[1:] if i not in ('-h', '--help')]
-    help_text = read_help_cmd(cmd)
+    args = parse_args()
 
-    intputs = get_inputs(help_text)
-    output_as_yaml(cmd, intputs)
+    help_text = read_help_cmd(args.command, help_param=args.param)
+    usage_str = usage_string(help_text, args.command)
+
+    inputs = get_inputs(help_text)
+    outputs = []
+
+    if not inputs:
+        print("Warning: No inputs found for '{}'".format(args.command))
+    output_as_yaml(args.command, inputs, outputs, usage_str, args.output)
+    print("Wrote tool to '{}'".format(args.output))
