@@ -1,7 +1,9 @@
 import re
 
 __program__ = "cwl-helper"
-__version__ = "0.0.3"
+__version__ = "0.0.4"
+
+CWL_VERSION = "v1.0"
 
 # Primitive types: string, int, long, float, double, null
 # Complex types: array, record
@@ -27,6 +29,8 @@ TYPE_LIST = {
     "str": "string",
     "string": "string",
 }
+# match one of TYPE_LIST in the string
+RE_TYPE = r"\b(?:" + "|".join([re.escape(i) for i in TYPE_LIST]) + r")\b"
 
 # match a substring that looks like a list
 RE_LIST = r"\{.*?\,.*?\}|\[.*?\,.*?\]"
@@ -34,5 +38,3 @@ RE_LIST = r"\{.*?\,.*?\}|\[.*?\,.*?\]"
 RE_PREFIX = r"(?<![a-z]|[A-Z]|[0-9])\-{1,2}[a-zA-Z0-9\-\.\?\@_]+"
 # match large whitespaces (e.g. preceeding a column)
 RE_SPACE = r"\s{3,}(?=[a-zA-Z0-9]+)"
-# match one of TYPE_LIST in the string
-RE_TYPE = r"\b(?:" + "|".join([re.escape(i) for i in TYPE_LIST]) + r")\b"
