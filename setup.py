@@ -1,6 +1,9 @@
 from setuptools import setup, find_packages
 from cwl_helper.constants import __program__, __version__
 
+# Temporary workaround for cwlgen failing to install:
+# pip install ruamel.yaml==0.13.13 git+https://github.com/common-workflow-language/python-cwlgen.git
+
 setup(
     name=__program__,
     version=__version__,
