@@ -12,4 +12,7 @@ setup(
     python_requires=">=3",
     include_package_data=True,
     install_requires=["cwlgen"],
+    entry_points={
+        'console_scripts': ['cwl-helper = cwl_helper.main:main']
+    },
 )

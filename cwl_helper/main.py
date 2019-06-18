@@ -14,9 +14,9 @@ from collections import defaultdict
 
 from cwlgen import CommandInputParameter, CommandLineBinding, CommandLineTool
 
-from arg import Arg
-from common import in_bounds, list_is_bools, read_shell_output, tool_id_from_cmd
-from constants import (
+from .arg import Arg
+from .common import in_bounds, list_is_bools, read_shell_output, tool_id_from_cmd
+from .constants import (
     CWL_VERSION,
     RE_PREFIX,
     RE_TYPE,
@@ -47,6 +47,7 @@ def check_for_columns(text, threshold=0.1):
 
     # iterate once through the text to try and find columns
     for line in text:
+        logging.debug("Reading: {}".format(line))
 
         # match argument prefix(es)
         for match in re.finditer(RE_PREFIX, line):
@@ -139,12 +140,12 @@ def iter_text(text, min_prfx=0, min_type=0, min_spce=0):
                             )
                             # match symbols that go with the prefix
                             # TODO: full implement symbol matching
-                            logging.info("> {} {}".format(line[end:], line[end]))
+                            logging.debug("> {} {}".format(line[end:], line[end]))
                             if line[end] == "=":
-                                logging.info("Matching line: {}".format(line[end+1:]))
+                                logging.debug("Matching line: {}".format(line[end+1:]))
                                 match_symbol = list(re.finditer(RE_LIST, line[end+1:]))
                                 if match_symbol:
-                                    logging.info("Match: {} with {}".format(group, match_symbol[0].group()))
+                                    logging.debug("Match: {} with {}".format(group, match_symbol[0].group()))
 
 
             # match recognized input type (e.g "FILE", "string", "LIST")
@@ -336,14 +337,19 @@ def arg_parse():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
-
+def main():
+    """
+    Entrypoint for cwl-helper
+    """
     args = arg_parse()
     logger = logging.getLogger()
     if args.verbose:
         logger.setLevel(logging.DEBUG)
     else:
         logger.setLevel(logging.INFO)
+
+    # TEMPORARY: use the command name to specify an output file
+    args.output = args.output or tool_id_from_cmd(args.input) + ".yaml"
 
     text = read_shell_output(args.input)
 
@@ -358,10 +364,26 @@ if __name__ == "__main__":
     cwl_args = convert_to_cwlgen(filter_list)
 
     tool_object = CommandLineTool(
-        tool_id=tool_id_from_cmd(args.input),
-        base_command=args.input,
+        tool_id=args.tool_id or tool_id_from_cmd(args.input),
+        base_command=args.base_cmd or args.input,
+        doc=args.tool_doc or "",
         cwl_version=CWL_VERSION,
     )
     tool_object.inputs = cwl_args
     tool_object.outputs = []
-    tool_object.export()
+
+    if args.output:
+        tool_object.export(args.output)
+        with open(args.output, "a") as fh:
+            if not cwl_args:
+                print("inputs: []", file=fh)
+            print("outputs: []", file=fh)
+    else:
+        tool_object.export()
+        if not cwl_args:
+            print("inputs: []", file=fh)
+        print("outputs: []")
+
+
+if __name__ == "__main__":
+    main()
