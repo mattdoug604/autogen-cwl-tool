@@ -3,7 +3,8 @@ from subprocess import Popen, PIPE, STDOUT
 from string import punctuation
 
 
-def read_shell_output(cmd):
+def read_shell_output(cmd, exclude_blank=True):
+    """Run a shell command and capture stdout and stderr"""
 
     text = []
     proc = Popen(
@@ -39,7 +40,7 @@ def list_is_bools(str_list):
     return True
 
 
-def tool_id_from_cmd(cmd):
+def id_from_cmd(cmd):
     """
     Convert the shell command to an ID string by:
     * replacing punction with underscores

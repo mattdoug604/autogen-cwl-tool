@@ -12,7 +12,7 @@ import argparse
 import re
 from collections import defaultdict
 
-from cwlgen import CommandInputParameter, CommandLineBinding, CommandLineTool
+from cwlgen import CommandLineTool
 
 from .arg import Arg
 from .common import in_bounds, list_is_bools, read_shell_output, tool_id_from_cmd
@@ -26,15 +26,17 @@ from .constants import (
     __program__,
     __version__,
 )
+from convert import arg_to_cwlgen
 
 
 def check_for_columns(text, threshold=0.1):
     """
-    Notes
-        * assume prefix comes before, type comes before doc string
-        * assume type may not be consistently placed
-        * assume required args come before optional ones
-        * assume an argument does not contain blank lines
+    Search for the start positions that of regex matches that occur frequently.
+    Assumes several things:
+    * prefix comes first, type comes before doc string
+    * type may not be consistently placed
+    * required args come before optional ones
+    * an argument does not contain blank lines
     """
 
     min_prfx = 0
@@ -94,7 +96,10 @@ def check_for_columns(text, threshold=0.1):
     return min_prfx, min_type, min_spce
 
 
-def iter_text(text, min_prfx=0, min_type=0, min_spce=0):
+def parse_inputs(text, min_prfx=0, min_type=0, min_spce=0):
+
+    inputs = []
+    arg = None
 
     # iterate again through the text to match values
     for n, line in enumerate(text):
@@ -103,6 +108,7 @@ def iter_text(text, min_prfx=0, min_type=0, min_spce=0):
         spce_matches = []
         match, start = None, None
         last = 0
+        prfxm, typem, spacem = None, None, None
 
         logging.debug("-" * 80)
         if not line:
@@ -193,21 +199,10 @@ def iter_text(text, min_prfx=0, min_type=0, min_spce=0):
                         )
                     )
 
-        yield prfx_matches, type_matches, spce_matches
-
-
-def build_args(text, columns):
-
-    arg_list = []
-    arg = None
-
-    for prfx_matches, type_matches, spce_matches in iter_text(text, *columns):
-        prfxm, typem, spacem = None, None, None
-
         # assume parameters do not have blank lines
         if not prfx_matches and not type_matches and not spce_matches:
             if arg:
-                arg_list.append(arg)
+                inputs.append(arg)
             arg = None
             continue
 
@@ -229,27 +224,27 @@ def build_args(text, columns):
         # TODO: select the more "complete" args if a prefix was caught mistakenly?
         if prfxm:
             if arg:
-                arg_list.append(arg)
+                inputs.append(arg)
             arg = Arg(prfxm)
         if arg and typem:
-            arg.set_type(typem)
+            arg.intype = typem
         if arg and spacem:
             arg.append_doc(spacem)
 
-    for arg in arg_list:
+    for arg in inputs:
         logging.debug("Arg: {}'".format(arg))
 
-    return arg_list
+    return inputs
 
 
-def post_process(arg_list):
+def post_process(inputs):
 
     filter_list = []
 
-    for arg in arg_list:
-        prfxm = arg.get_prefix()
-        typem = arg.get_type().lower()
-        docm = arg.get_doc()
+    for arg in inputs:
+        prfxm = arg.prefix
+        typem = arg.intype.lower()
+        docm = arg.doc
         logging.debug("-" * 80)
         logging.debug("Post-process arg: '{}'".format(prfxm))
 
@@ -259,7 +254,7 @@ def post_process(arg_list):
             new_type = TYPE_LIST[typem]
         else:
             new_type = "boolean"
-        arg.set_type(new_type)
+        arg.intype = new_type
         logging.debug("Coercing type '{}' to '{}'".format(typem, new_type))
 
         # try to identify choices; indicate an enum
@@ -269,10 +264,10 @@ def post_process(arg_list):
             logging.debug("Matched list '{}' in '{}'".format(choices, docm))
             # TODO: properly interpret a CWL list
             if list_is_bools(choices):
-                arg.set_type("boolean")
+                arg.type = "boolean"
                 logging.debug("Interpret list as 'boolean'")
             else:
-                arg.set_type("string")
+                arg.intype = "string"
                 logging.debug("Interpret list as 'string'")
 
         filter_list.append(arg)
@@ -281,26 +276,6 @@ def post_process(arg_list):
         logging.debug("Arg: {}'".format(arg))
 
     return filter_list
-
-
-def convert_to_cwlgen(arg_list):
-
-    cwl_args = []
-
-    for arg in arg_list:
-        prfxm = arg.get_prefix()
-        typem = arg.get_type()
-        docm = arg.get_doc()
-        logging.debug("-" * 80)
-        logging.debug("Converting arg: '{}'".format(prfxm))
-
-        cwl_binding = CommandLineBinding(prefix=prfxm, position=0)
-        cwl_input = CommandInputParameter(
-            arg.get_id(), param_type=typem, input_binding=cwl_binding, doc=docm
-        )
-        cwl_args.append(cwl_input)
-
-    return cwl_args
 
 
 def arg_parse():
@@ -358,10 +333,10 @@ def main():
     if args.columns:
         columns = args.columns
 
-    arg_list = build_args(text, columns)
-    filter_list = post_process(arg_list)
+    inputs = parse_inputs(text, columns)
+    filter_list = post_process(inputs)
 
-    cwl_args = convert_to_cwlgen(filter_list)
+    cwl_args = arg_to_cwlgen(filter_list)
 
     tool_object = CommandLineTool(
         tool_id=args.tool_id or tool_id_from_cmd(args.input),
