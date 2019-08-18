@@ -1,0 +1,17 @@
+view
+sort
+mpileup
+depth
+faidx
+tview
+index
+idxstats
+fixmate
+flagstat
+calmd
+merge
+rmdup
+reheader
+cat
+targetcut
+phase
