@@ -3,27 +3,11 @@ from subprocess import Popen, PIPE, STDOUT
 from string import punctuation
 
 
-def read_shell_output(cmd, exclude_blank=True):
-    """Run a shell command and capture stdout and stderr"""
-
-    text = []
-    proc = Popen(
-        cmd, shell=True, stdout=PIPE, stderr=PIPE
-    )
-    for source in (proc.stdout, proc.stderr):
-        for line in source.readlines():
-            line = line.decode("utf-8")
-            if line:
-                text.append(line)
-    return text
-
-
 def in_bounds(value, lower=None, upper=None):
     """
     Check if value is in a given range where the upper and/or lower bounds can be 
     undefined.
     """
-
     if lower and value < lower:
         return False
     if upper and value > upper:

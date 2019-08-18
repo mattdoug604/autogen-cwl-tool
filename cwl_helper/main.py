@@ -1,21 +1,20 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
 TODO:
 * match 'type' in the format: <type>
 """
 
-import logging
-logging.basicConfig(format="[%(levelname)s] %(message)s")
-
 import argparse
+import logging
 import re
+import sys
 from collections import defaultdict
 
 from cwlgen import CommandLineTool
 
 from .arg import Arg
-from .common import in_bounds, list_is_bools, read_shell_output, tool_id_from_cmd
+from .common import in_bounds, list_is_bools
 from .constants import (
     CWL_VERSION,
     RE_PREFIX,
@@ -26,7 +25,7 @@ from .constants import (
     __program__,
     __version__,
 )
-from convert import arg_to_cwlgen
+from .convert import arg_to_cwlgen
 
 
 def check_for_columns(text, threshold=0.1):
@@ -282,18 +281,17 @@ def arg_parse():
 
     parser = argparse.ArgumentParser(add_help=False)
 
-    req = parser.add_argument_group("required arguments")
-    req.add_argument(
-        "-i", "--input", required=True, help="a text file containing the output of a help command"
+    opt_tool = parser.add_argument_group("tool information")
+    opt_tool.add_argument("-t", "--tool-id", default="tool_id", help="specify tool_id")
+    opt_tool.add_argument(
+        "-b", "--base-cmd", default="command", help="specify base_command"
     )
-
-    opt = parser.add_argument_group("tool information")
-    opt.add_argument("-t", "--tool-id", help="specify tool_id")
-    opt.add_argument("-b", "--base-cmd", help="specify base_command")
-    opt.add_argument("-d", "--tool-doc", help="specify the tool docstring")
-
+    opt_tool.add_argument(
+        "-d", "--tool-doc", default="docstring", help="specify the tool docstring"
+    )
     opt = parser.add_argument_group("optional arguments")
-    opt.add_argument("-o", "--output", help="output to file")
+    opt.add_argument("-i", "--input", help="input is a text file (default: stdin)")
+    opt.add_argument("-o", "--output", help="output to file (default: stdout)")
     opt.add_argument(
         "-c",
         "--columns",
@@ -303,10 +301,19 @@ def arg_parse():
         'docstring' (e.g. -c 0 12 30). Set value(s) to -1 to ignore.""",
     )
     opt.add_argument(
-        "--no-columns", action="store_true", help="do not try to auto-detect columns"
+        "--no-columns",
+        action="store_true",
+        help="do not try to auto-detect columns (use '-c' instead)",
     )
-    opt.add_argument("--version", action="version", version="{} v{}".format(__program__, __version__), help="print the version and exit")
-    opt.add_argument("-v", "--verbose", action="store_true", help="print extra information")
+    opt.add_argument(
+        "--version",
+        action="version",
+        version="{} v{}".format(__program__, __version__),
+        help="print the version and exit",
+    )
+    opt.add_argument(
+        "-v", "--verbose", action="store_true", help="print extra information"
+    )
     opt.add_argument("-h", "--help", action="help", help="print this message and exit")
 
     return parser.parse_args()
@@ -317,36 +324,42 @@ def main():
     Entrypoint for cwl-helper
     """
     args = arg_parse()
+
     logger = logging.getLogger()
     if args.verbose:
         logger.setLevel(logging.DEBUG)
     else:
         logger.setLevel(logging.INFO)
 
-    # TEMPORARY: use the command name to specify an output file
-    args.output = args.output or tool_id_from_cmd(args.input) + ".yaml"
+    if args.input:
+        with open(args.input, "r") as fh:
+            text = fh.readlines()
+    else:
+        text = sys.stdin.readlines()
 
-    text = read_shell_output(args.input)
+    print(text)
 
     if not args.columns and not args.no_columns:
         columns = check_for_columns(text)
     if args.columns:
         columns = args.columns
 
-    inputs = parse_inputs(text, columns)
+    inputs = parse_inputs(text, *columns)
     filter_list = post_process(inputs)
 
-    cwl_args = arg_to_cwlgen(filter_list)
+    cwl_args = [arg_to_cwlgen(i) for i in filter_list]
 
     tool_object = CommandLineTool(
-        tool_id=args.tool_id or tool_id_from_cmd(args.input),
-        base_command=args.base_cmd or args.input,
-        doc=args.tool_doc or "",
+        tool_id=args.tool_id,
+        base_command=args.base_cmd,
+        doc=args.tool_doc,
         cwl_version=CWL_VERSION,
     )
     tool_object.inputs = cwl_args
     tool_object.outputs = []
 
+    # An input and output header are needed to run a CWL tool. However, cwlgen does not
+    # output these by if they are empty lists.
     if args.output:
         tool_object.export(args.output)
         with open(args.output, "a") as fh:
@@ -356,7 +369,7 @@ def main():
     else:
         tool_object.export()
         if not cwl_args:
-            print("inputs: []", file=fh)
+            print("inputs: []")
         print("outputs: []")
 
 

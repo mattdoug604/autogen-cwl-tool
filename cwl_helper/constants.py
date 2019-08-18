@@ -1,7 +1,7 @@
 import re
 
 __program__ = "cwl-helper"
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 
 CWL_VERSION = "v1.0"
 

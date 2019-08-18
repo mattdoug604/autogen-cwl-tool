@@ -10,7 +10,7 @@ setup(
     author="mattdoug604",
     author_email="mattdoug604@gmail.com",
     packages=find_packages(),
-    description="Automatically generate a bare-bones CWL tool for your program of interest.",
+    description="Generate a bare-bones CWL tool from a program's help text",
     url="https://github.com/mattdoug604/cwl-helper.git",
     python_requires=">=3",
     include_package_data=True,
