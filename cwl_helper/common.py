@@ -26,16 +26,16 @@ def list_is_bools(str_list):
 
 def id_from_cmd(cmd):
     """
-    Convert the shell command to an ID string by:
+    Convert a shell command to an ID string by:
     * replacing punction with underscores
     * replacing uppercase letters with lowercase equivalent preceeded by an underscore
     * replacing multiple underscores in a row with one underscore
     """
 
-    old =  punctuation + ' '
-    new = '_' * len(old)
+    old = punctuation + " "
+    new = "_" * len(old)
     tool_id = cmd.translate(str.maketrans(old, new))
-    tool_id = re.sub('(?<!^)(?=[A-Z])', '_', tool_id).lower()
-    tool_id = re.sub('_{2,}', '_', tool_id)
+    tool_id = re.sub("(?<!^)(?=[A-Z])", "_", tool_id).lower()
+    tool_id = re.sub("_{2,}", "_", tool_id)
 
     return tool_id

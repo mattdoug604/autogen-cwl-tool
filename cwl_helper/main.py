@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 
-"""
-TODO:
-* match 'type' in the format: <type>
-"""
-
 import argparse
 import logging
 import re
@@ -30,12 +25,26 @@ from .convert import arg_to_cwlgen
 
 def check_for_columns(text, threshold=0.1):
     """
-    Search for the start positions that of regex matches that occur frequently.
-    Assumes several things:
-    * prefix comes first, type comes before doc string
+    Help text from commandline programs are usually arranged into loose columns. We 
+    try to determine the positions of each of the columns as a method of filtering out
+    false positives when parsing the text later on. This is done by search for 
+    positions where regex matches that occur frequently (above an arbitrary threshold).
+
+    This assumes several things:
+    * prefix comes first, type comes before the docstring
     * type may not be consistently placed
     * required args come before optional ones
     * an argument does not contain blank lines
+
+    Args:
+        text (list): of string composing the help text
+        threshold (float): the percentage of regex matches that must occur at the same 
+            position to be counted
+
+    Returns:
+        min_prfx (int): minimum position at which an argument prefix starts
+        min_type (int): minimum position at which an argument type starts
+        min_spce (int): minimum position at which an argument docstring starts
     """
 
     min_prfx = 0
@@ -68,9 +77,7 @@ def check_for_columns(text, threshold=0.1):
 
     # find the most common prefix postions
     total_prfx = sum(prfx_ranges.values())
-    filter_prfx = {
-        k: v for k, v in prfx_ranges.items() if v / total_prfx > threshold
-    }
+    filter_prfx = {k: v for k, v in prfx_ranges.items() if v / total_prfx > threshold}
     min_prfx = min_prfx if not filter_prfx else min(filter_prfx)
     logging.debug("Filter prefix start = {}".format(min_prfx))
 
@@ -96,6 +103,18 @@ def check_for_columns(text, threshold=0.1):
 
 
 def parse_inputs(text, min_prfx=0, min_type=0, min_spce=0):
+    """
+    Parse the help text using pre-determined filtering parameters.
+    
+    Args:
+        text (list): of string composing the help text
+        min_prfx (int): minimum position at which an argument prefix starts
+        min_type (int): minimum position at which an argument type starts
+        min_spce (int): minimum position at which an argument docstring starts
+
+    Returns:
+        inputs (list): of arg.Arg objects
+    """
 
     inputs = []
     arg = None
@@ -147,11 +166,18 @@ def parse_inputs(text, min_prfx=0, min_type=0, min_spce=0):
                             # TODO: full implement symbol matching
                             logging.debug("> {} {}".format(line[end:], line[end]))
                             if line[end] == "=":
-                                logging.debug("Matching line: {}".format(line[end+1:]))
-                                match_symbol = list(re.finditer(RE_LIST, line[end+1:]))
+                                logging.debug(
+                                    "Matching line: {}".format(line[end + 1 :])
+                                )
+                                match_symbol = list(
+                                    re.finditer(RE_LIST, line[end + 1 :])
+                                )
                                 if match_symbol:
-                                    logging.debug("Match: {} with {}".format(group, match_symbol[0].group()))
-
+                                    logging.debug(
+                                        "Match: {} with {}".format(
+                                            group, match_symbol[0].group()
+                                        )
+                                    )
 
             # match recognized input type (e.g "FILE", "string", "LIST")
             for match in re.finditer(RE_TYPE, line, flags=re.IGNORECASE):
@@ -237,6 +263,17 @@ def parse_inputs(text, min_prfx=0, min_type=0, min_spce=0):
 
 
 def post_process(inputs):
+    """
+    Perform several post-processing functions:
+    * match the type of each argument to a valid CWL input type
+    * match valid input values for each input from their docstring
+
+    Args:
+        inputs (list): of arg.Arg objects
+
+    Returns:
+        filter_list (list): of filtered arg.Arg objects
+    """
 
     filter_list = []
 
@@ -279,19 +316,44 @@ def post_process(inputs):
 
 def arg_parse():
 
-    parser = argparse.ArgumentParser(add_help=False)
+    description = (
+        "Parse the help text of a given program and output a barebones CWL tool "
+        "description.\nNOTE: This is still under developlment and the output CWL will "
+        "likely need to some manual adjustment (typically the input types and output)"
+    )
+
+    parser = argparse.ArgumentParser(description=description, add_help=False)
 
     opt_tool = parser.add_argument_group("tool information")
-    opt_tool.add_argument("-t", "--tool-id", default="tool_id", help="specify tool_id")
     opt_tool.add_argument(
-        "-b", "--base-cmd", default="command", help="specify base_command"
+        "-t", 
+        "--tool-id", 
+        default="tool_id", 
+        help="specify tool_id"
     )
     opt_tool.add_argument(
-        "-d", "--tool-doc", default="docstring", help="specify the tool docstring"
+        "-b", 
+        "--base-cmd", 
+        default="command", 
+        help="specify base_command"
+    )
+    opt_tool.add_argument(
+        "-d", 
+        "--tool-doc", 
+        default="docstring", 
+        help="specify the tool docstring"
     )
     opt = parser.add_argument_group("optional arguments")
-    opt.add_argument("-i", "--input", help="input is a text file (default: stdin)")
-    opt.add_argument("-o", "--output", help="output to file (default: stdout)")
+    opt.add_argument(
+        "-i", 
+        "--input", 
+        help="input is a text file (default: stdin)"
+    )
+    opt.add_argument(
+        "-o", 
+        "--output", 
+        help="output to file (default: stdout)"
+    )
     opt.add_argument(
         "-c",
         "--columns",
@@ -312,11 +374,20 @@ def arg_parse():
         help="print the version and exit",
     )
     opt.add_argument(
-        "-v", "--verbose", action="store_true", help="print extra information"
+        "-v",
+        "--verbose", 
+        action="store_true", 
+        help="print extra information"
     )
-    opt.add_argument("-h", "--help", action="help", help="print this message and exit")
+    opt.add_argument(
+        "-h", 
+        "--help", 
+        action="help", 
+        help="print this message and exit"
+    )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    return args
 
 
 def main():
@@ -337,8 +408,6 @@ def main():
     else:
         text = sys.stdin.readlines()
 
-    print(text)
-
     if not args.columns and not args.no_columns:
         columns = check_for_columns(text)
     if args.columns:
@@ -357,20 +426,23 @@ def main():
     )
     tool_object.inputs = cwl_args
     tool_object.outputs = []
+    required_but_missing = []
+    if not tool_object.inputs:
+        required_but_missing.append("inputs: []")
+    if not tool_object.outputs:
+        required_but_missing.append("outputs: []")
 
-    # An input and output header are needed to run a CWL tool. However, cwlgen does not
+    # an input and output header are needed to run a CWL tool. However, cwlgen does not
     # output these by if they are empty lists.
     if args.output:
         tool_object.export(args.output)
         with open(args.output, "a") as fh:
-            if not cwl_args:
-                print("inputs: []", file=fh)
-            print("outputs: []", file=fh)
+            for line in required_but_missing:
+                print(line, file=fh)
     else:
         tool_object.export()
-        if not cwl_args:
-            print("inputs: []")
-        print("outputs: []")
+        for line in required_but_missing:
+            print(line)
 
 
 if __name__ == "__main__":

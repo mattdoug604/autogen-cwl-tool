@@ -14,7 +14,7 @@ class Arg:
         return self.__prefix or ""
 
     @prefix.setter
-    def prefix(self, prefix): 
+    def prefix(self, prefix):
         self.__prefix = prefix.strip()
 
     @property
